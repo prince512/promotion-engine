@@ -1,0 +1,263 @@
+image: atlassian/default-image:3
+
+clone:
+  depth: full
+
+caches:
+  steps:
+    - step: &security-scan
+        name: Security Scan
+        script:
+          - pipe: atlassian/git-secrets-scan:1.2.1
+    - step: &trivy-scan
+        name: trivy Scan
+        services:
+          - docker
+        script:
+          - pipe: aquasecurity/trivy-pipe:1.0.0
+            variables:
+              scanType: "fs"
+              ignoreUnfixed: "true"
+              format: sarif
+              output: "trivy-results.sarif"
+              severity: "CRITICAL"
+
+    - step: &build-jar
+        name: Build and Test
+        image: gradle:8-jdk20
+        script:
+          - gradle clean build -x test -Djacoco.skip=true
+        after-script:
+          - pipe: atlassian/checkstyle-report:0.4.0
+        artifacts:
+          - build/libs/*SNAPSHOT.jar
+
+    - step: &build-docker
+        name: Build Docker
+        image: gcr.io/google.com/cloudsdktool/cloud-sdk
+        runs-on:
+          - "dev"
+        script:
+          - gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://gcr.io
+          - gcloud auth configure-docker europe-west2-docker.pkg.dev
+          - gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://europe-west2-docker.pkg.dev
+          #- echo $GCLOUD_API_KEYFILE | base64 -d > ./gcloud-api-key.json
+          #- cat ./gcloud-api-key.json | docker login -u _json_key --password-stdin https://gcr.io
+          - IMAGE_NAME=$BITBUCKET_REPO_SLUG
+          - export DOCKER_BUILDKIT=0
+          - IMAGE_NAME="europe-west2-docker.pkg.dev/${PROJECT}/wasoko/${BITBUCKET_REPO_SLUG}"
+          - VERSION="rel-${BITBUCKET_BUILD_NUMBER}"
+          - docker build --build-arg PROJECT=${PROJECT} --build-arg _NAME=${IMAGE_NAME} . --file ops/Dockerfile --tag ${IMAGE_NAME}:${VERSION}
+          #- docker save ${IMAGE_NAME}:${VERSION} --output "${BITBUCKET_REPO_SLUG}.tar"
+          - echo ${IMAGE_NAME}:${VERSION} >> build.txt
+          - docker push "${IMAGE_NAME}:${VERSION}"
+        services:
+          - docker
+        caches:
+          - docker
+        artifacts:
+          #- "*.tar"
+          - build.txt
+
+    - step: &deploy
+        name: Deploy
+        image: gcr.io/google.com/cloudsdktool/cloud-sdk
+        script:
+          - export SERVICE_NAME="${ENV}--${BU}--${BITBUCKET_REPO_SLUG}"
+          - export IMAGE_NAME=$(cat build.txt)
+          - bash  ops/cloudbuild/pipelines/cloudrun.sh
+          - bash  ops/cloudbuild/pipelines/newrelic_update.sh
+
+        services:
+          - docker
+    - step: &move-image-uat
+        name: Move Docker Image to UAT
+        image: gcr.io/google.com/cloudsdktool/cloud-sdk
+        runs-on:
+          - "tst"
+        script:
+          - gcloud auth configure-docker europe-west2-docker.pkg.dev
+          - gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://europe-west2-docker.pkg.dev
+          - PROJECT='sok-tst-svc'
+          - IMAGE_NAME=$(cat build.txt)
+          - NEW_IMAGE_NAME="europe-west2-docker.pkg.dev/${PROJECT}/wasoko/${BITBUCKET_REPO_SLUG}"
+          - VERSION="rel-${BITBUCKET_BUILD_NUMBER}"
+          - docker pull ${IMAGE_NAME}
+          - docker tag ${IMAGE_NAME} ${NEW_IMAGE_NAME}:${VERSION}
+          - docker push ${NEW_IMAGE_NAME}:${VERSION}
+          - echo ${NEW_IMAGE_NAME}:${VERSION} > build.txt
+        artifacts:
+          - build.txt
+        services:
+          - docker
+
+    - step: &move-image-prod
+        name: Move Docker Image to PRD
+        image: gcr.io/google.com/cloudsdktool/cloud-sdk
+        runs-on:
+          - "prd"
+        script:
+          - gcloud auth configure-docker europe-west2-docker.pkg.dev
+          - gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://europe-west2-docker.pkg.dev
+          - PROJECT='sok-prd-svc'
+          - IMAGE_NAME=$(cat build.txt)
+          - PRD_IMAGE_NAME="europe-west2-docker.pkg.dev/${PROJECT}/wasoko/${BITBUCKET_REPO_SLUG}"
+          - VERSION="rel-${BITBUCKET_BUILD_NUMBER}"
+          - docker pull ${IMAGE_NAME}
+          - docker tag ${IMAGE_NAME} ${PRD_IMAGE_NAME}:${VERSION}
+          - docker push ${PRD_IMAGE_NAME}:${VERSION}
+          - echo ${PRD_IMAGE_NAME}:${VERSION} > build.txt
+        artifacts:
+          - build.txt
+        services:
+          - docker
+
+pipelines:
+  default:
+    - stage:
+        name: Test and Build Docker
+        steps:
+          - step: *security-scan
+          - step: *trivy-scan
+          - step: *build-jar
+    - stage:
+        name: Build Docker
+        trigger: manual
+        steps:
+          - step: *build-docker
+    - stage:
+        name: Deploy Dev
+        deployment: Dev
+        trigger: manual
+        steps:
+          - step:
+              <<: *deploy
+              runs-on:
+                - "dev"
+    - stage:
+        name: Move Docker image to UAT
+        steps:
+          - step: *move-image-uat
+
+    - stage:
+        name: Deploy to QA
+        deployment: QA
+        trigger: manual
+        steps:
+          - step:
+              <<: *deploy
+              runs-on:
+                - "tst"
+
+  branches:
+    master:
+      - stage:
+          name: Test and Build Docker
+          steps:
+            - step: *security-scan
+            - step: *trivy-scan
+            - step: *build-jar
+
+      - stage:
+          name: Build Docker
+          trigger: manual
+          steps:
+            - step: *build-docker
+
+      - stage:
+          name: Deploy to Dev
+          deployment: Dev
+          trigger: manual
+          steps:
+            - step:
+                <<: *deploy
+                runs-on:
+                  - "dev"
+      - stage:
+          name: Move Docker image to UAT
+          steps:
+            - step: *move-image-uat
+
+      - stage:
+          name: Deploy to QA
+          deployment: QA
+          trigger: manual
+          steps:
+            - step:
+                <<: *deploy
+                runs-on:
+                  - "tst"
+
+      - stage:
+          name: Deploy to UAT
+          deployment: UAT
+          trigger: manual
+          steps:
+            - step:
+                <<: *deploy
+                runs-on:
+                  - "tst"
+      - stage:
+          name: Move Docker image to PRD
+          steps:
+            - step: *move-image-prod
+
+      - stage:
+          name: Deploy to Production
+          deployment: production
+          trigger: manual
+          steps:
+            - step:
+                <<: *deploy
+                runs-on:
+                  - "prd"
+
+    release/*:
+      - stage:
+          name: Test and Build Docker
+          steps:
+            - step: *security-scan
+            - step: *trivy-scan
+            - step: *build-jar
+      - stage:
+          name: Build Docker
+          trigger: manual
+          steps:
+            - step: *build-docker
+      - stage:
+          name: Deploy to Dev
+          deployment: Dev
+          trigger: manual
+          steps:
+            - step:
+                <<: *deploy
+                runs-on:
+                  - "dev"
+      - stage:
+          name: Move Docker image to UAT
+          steps:
+            - step: *move-image-uat
+
+      - stage:
+          name: Deploy to UAT
+          deployment: UAT
+          trigger: manual
+          steps:
+            - step:
+                <<: *deploy
+                runs-on:
+                  - "tst"
+      - stage:
+          name: Move Docker image to PRD
+          steps:
+            - step: *move-image-prod
+
+      - stage:
+          name: Deploy to Production
+          deployment: production
+          trigger: manual
+          steps:
+            - step:
+                <<: *deploy
+                runs-on:
+                  - "prd"
