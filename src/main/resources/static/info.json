@@ -1,0 +1,27 @@
+{
+  "deploy": {
+    "by": "devops",
+    "at": "2022-02-03-08-37-31"
+  },
+  "app": {
+    "version": "dev-eu--4.7.2.3.31--2022-02-03-08-37-31--master--320bdf56",
+    "desc": "ui assets",
+    "name": "OVS refresh ui assets"
+  },
+  "build": {
+    "at": "2022-02-03-08-37-31",
+    "by": "jenkins",
+    "id": 31,
+    "patch": "3",
+    "sha": "320bdf56",
+    "branch": "origin/master"
+  },
+  "version": {
+    "major": "4",
+    "minor": "7",
+    "tiny": "2",
+    "patch": "3",
+    "build": 31,
+    "jid": null
+  }
+}

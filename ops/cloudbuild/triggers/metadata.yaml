@@ -1,0 +1,7 @@
+businessunit: retailiq
+repo: promotion-service
+desc: promotion-service-for-retailiq-api
+region: europe-west2
+url: retailiq.wasoko.com
+config: config.wasoko.com
+types: run,job,scheduler

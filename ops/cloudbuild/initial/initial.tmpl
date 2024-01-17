@@ -1,0 +1,8 @@
+filename: ops/cloudbuild/initial/initial.yaml
+name: setup-env--businessunit--reponame
+triggerTemplate:
+  projectId: projectname
+  repoName: bitbucket_wasoko_reponame
+  tagName: ^setup-env---*
+substitutions:
+  _ENV: env

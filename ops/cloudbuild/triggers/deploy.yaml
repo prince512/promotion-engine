@@ -1,0 +1,33 @@
+filename: ops/cloudbuild/pipelines/<typ>.yaml
+name: <env>--<businessunit>--<repo>
+substitutions:
+  _BUSINESSUNIT: <businessunit>
+  _REPO: <repo>
+  _DESC: <desc>  
+  _ENV: <env>
+  _REGION: <region>
+  _URL: https://<env>.<et>.<url>
+  _NAME: <env>--<businessunit>--<repo>
+  _VALIDATOR_BUILDER: cloud-builders/null
+  envs:
+    qa:
+      _VALIDATOR_BUILDER: delete-this-key
+    prd:
+      #_MEMORY: '--memory=1Gi'
+      #_CPU: '--cpu=1'
+      _MIN_INSTANCES: '--min-instances=0'
+      _MAX_INSTANCES: '--max-instances=1'
+      #_CPU_THROTTLING: '--no-cpu-throttling'
+      _VPC_EGRESS: '--vpc-egress=private-ranges-only'
+      _URL: https://<url>
+triggerTemplate:
+  projectId: sok-<cenv>-svc
+  repoName: bitbucket_wasoko_<repo>
+  tagName: ^<env>---*
+approvalConfig:
+  approvalRequired: true
+  envs:
+    dev:
+      approvalRequired: false
+    qa:
+      approvalRequired: false

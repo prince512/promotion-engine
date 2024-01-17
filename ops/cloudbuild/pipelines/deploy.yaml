@@ -1,0 +1,86 @@
+steps:
+  - name: 'busybox:musl'
+    args: [ 'echo', '${_NAME}' ]
+  - name: 'gcr.io/${PROJECT_ID}/cloud-builders/ruby-slim'
+    args: [ "/app/info.rb", "BUILD_ID=$BUILD_ID;SHORT_SHA=$SHORT_SHA;PROJECT_ID=$PROJECT_ID;LOCATION=$LOCATION;TRIGGER_NAME=$TRIGGER_NAME;COMMIT_SHA=$COMMIT_SHA;REVISION_ID=$REVISION_ID;SHORT_SHA=$SHORT_SHA;REPO_NAME=$REPO_NAME;BRANCH_NAME=$BRANCH_NAME;TAG_NAME=$TAG_NAME;TRIGGER_BUILD_CONFIG_PATH=$TRIGGER_BUILD_CONFIG_PATH;ENV=${_ENV};BUSINESSUNIT=${_BUSINESSUNIT};REPO=${_REPO};DESC=${_DESC};COMMIT_URL=${_COMMIT_URL};REPO_URL=${_REPO_URL};NAME=${_NAME}"]
+  - name: 'busybox:musl'
+    args: [ 'cat', 'tmp/src.json' ]
+  - name: 'gradle:7-jdk17'
+    args: [ "gradle", "build","-x", "test", "-Djacoco.skip=true"]
+    timeout: 300s
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [ 'build','--build-arg', '_NAME=${_NAME}','--build-arg', 'PROJECT=${PROJECT_ID}', '-t', '${_IMG}:${_TAG}', '-f', 'ops/Dockerfile', '.' ]
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [ 'push', '${_IMG}:${_TAG}' ]
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args: [ '-c', 'gcloud beta run deploy ${_NAME} --image=${_IMG}:${_TAG} ${_MEMORY} ${_CPU} ${_MIN_INSTANCES} ${_MAX_INSTANCES} ${_VPC_EGRESS} 
+    ${_TIMEOUT} ${_CPU_THROTTLING} --execution-environment=gen2 --ingress=internal-and-cloud-load-balancing --allow-unauthenticated --cpu-boost 
+    --vpc-connector=projects/${_HOST}/locations/${_REGION}/connectors/default --service-account=cloudrun@${PROJECT_ID}.iam.gserviceaccount.com 
+    --update-env-vars=ENV=${_ENV} 
+    --update-secrets=DB_PASSWORD=WRITER_PASSWORD:latest,SPRING_CLOUD_CONFIG_PASSWORD=SPRING_SECURITY_USER_PASSWORD:latest,NEW_RELIC_LICENSE_KEY=NEW_RELIC_LICENSE_KEY:latest 
+    --labels=validated=null --region=${_REGION}' ]
+    timeout: 600s
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args: [ '-c', 'gcloud beta run services update-traffic ${_NAME} --to-latest --region=${_REGION}' ]
+    timeout: 90s
+  # - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  #   entrypoint: bash
+  #   args: [ '-c', 'gcloud scheduler jobs update http ${_NAME} --schedule "${_SCHEDULE}" --http-method GET --uri ${_URL}${_SCHEDULER_PATH} --update-headers Content-Type=application/json,Authorization=${_SCH_AUTH_TOKEN}  --location ${_REGION}' ]
+  # - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  #   entrypoint: bash
+  #   args: [ '-c', 'gcloud scheduler jobs update http ${_NAME} --schedule "${_SCHEDULE}" --http-method GET --uri ${_URL}/${_LOAN_PATH} --message-body-from-file=migrate_loan_payload.json --update-headers Content-Type=application/json --location ${_REGION}']
+  # - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  #   entrypoint: bash
+  #   args: ['-c', 'gcloud beta run jobs update ${_NAME} --image=${_IMG}:${_TAG} --memory=${_MEMORY} --cpu=${_CPU} --tasks=${_TASKS} --max-retries=${_MAX_RETRIES} --execution-environment=gen2 --vpc-egress=private-ranges-only --vpc-connector=projects/sok-${_CENV}-hst/locations/europe-west2/connectors/default --service-account=cloudrun@${PROJECT_ID}.iam.gserviceaccount.com --update-env-vars=ENV=${_ENV},ET=${_ET},DB_NAME=${_ENV},SLEEP_MS=${_SLEEP_MS},FAIL_RATE=${_FAIL_RATE} --update-secrets=DB_PASSWORD=DEVUSER_PASSWORD:latest --region=europe-west2']
+  # - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  #   entrypoint: bash
+  #   args: ['-c', 'gcloud beta run jobs execute ${_NAME} --region=europe-west2 --wait']
+  - name: 'gcr.io/${PROJECT_ID}/cloud-builders/ruby-slim'
+    args: [ '/app/curl.rb', '${_URL}${_PATH}/info.json', '10' ]
+  - name: 'busybox:musl'
+    args: [ 'cat', 'tmp/src.json' ]
+  - name: 'busybox:musl'
+    args: [ 'cat', 'tmp/dst.json' ]
+  - name: 'gcr.io/${PROJECT_ID}/cloud-builders/ruby-slim'
+    args: [ '/app/verify.rb', '${_URL}${_PATH}/info.json' ]
+  - name: 'busybox:musl'
+    args: [ 'cat', 'tmp/pass' ]
+  - name: 'gcr.io/${PROJECT_ID}/${_VALIDATOR_BUILDER}'
+    args: [ '/app/validator.rb', '${_NAME}', '${_ENV}-validator-ims', '${_REGION}' ]
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [ 'tag', '${_IMG}:${_TAG}', '${_IMG}:${_ENV}' ]
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    args: ['true']
+    waitFor: ['-']
+  - name: 'gradle:7-jdk17'
+    args: ['true']
+    waitFor: ['-']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['--version']
+    waitFor: ['-']
+  # - name: 'gcr.io/${PROJECT_ID}/${_VALIDATOR_BUILDER}'
+  #   args: ['true']
+  #   waitFor: ['-']
+  # - name: 'gcr.io/${PROJECT_ID}/cloud-builders/ruby-slim'
+  #   args: ['--version']
+  #   waitFor: ['-']
+substitutions:
+  _PATH: "/apis/${_BUSINESSUNIT}/${_REPO}/v1"
+  _ENV: "${TAG_NAME%%---*}"
+  _HOST: "${PROJECT_ID//svc/hst}"
+  _IMG: 'gcr.io/${PROJECT_ID}/${_BUSINESSUNIT}/${_REPO}'
+  _TAG: '${TAG_NAME}'
+  _VALIDATOR_BUILDER: 'cloud-builders/validator-${_ET}-${_ENV}'
+  # _SCHEDULER_PATH: '/scm-ib/v1/product/prices/update_prices_effective_from'
+  # _SCHEDULE: '0 0 * * *'
+  # _SCH_AUTH_TOKEN: '\$2a\$10\$5Yu/D8mzkAeZ6rsEzVVW3.4EEJYTqU8hQ/Xq8UxGYQzyzX2Ml.Kmq'
+options:
+  dynamic_substitutions: true
+  machineType: 'E2_HIGHCPU_8'
+  substitution_option: 'ALLOW_LOOSE'
+timeout: 900s
+images: [ '${_IMG}' ]
+tags: [ '${_TAG}', '${_ENV}' ]
+

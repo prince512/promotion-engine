@@ -1,0 +1,4 @@
+steps:
+  - name: 'gcr.io/${PROJECT_ID}/cloud-builders/cloud-sdk-ruby'
+    args: ['/app/update-trigger.rb', '${_ENV}', 'true']
+timeout: 900s

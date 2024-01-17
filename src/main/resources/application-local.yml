@@ -1,0 +1,27 @@
+server:
+  address: 0.0.0.0
+  port: 8092
+
+#enable this if you have any local database setup available
+# db:
+#   host: localhost
+#   name: dbname
+#   username: postgres
+#   password: postgres
+#   rep1: ${db.host}
+
+logging:
+  level:
+    web: DEBUG
+
+info:
+  deploy:
+    at: 2022-02-03-08-37-31
+    by: local
+
+management:
+  endpoints:
+    web:
+      base-path: /
+      exposure:
+        include: info,health,env,configprops,shutdown,restart

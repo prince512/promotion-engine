@@ -1,0 +1,28 @@
+#environment type, this can be any one of d, t, p
+et: d
+
+#environment, this can be any one of dev, qa, uat, prd
+env: dev
+
+#this will load the src/main/resources/application-local.yml file in developer machine
+running: local
+
+#this can be https://dev.d.config.wasoko.com/,  https://tst.t.config.wasoko.com/,  https://prd.p.config.wasoko.com/,  http://localhost:8888/
+configurl: https://dev.d.config.wasoko.com/
+
+#TODO: remove this after backward compatible over
+envtype: ${et}
+
+spring:
+  application:
+    name: promotion-service
+  profiles:
+    active: ${et},${env},${running}
+  config:
+    import: "configserver:"
+  cloud:
+    config:
+      uri: ${configurl}
+      username: allsvcs
+      password: Soko@2022
+      name: retailiq-promotion-service

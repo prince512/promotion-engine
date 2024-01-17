@@ -1,0 +1,27 @@
+filename: ops/cloudbuild/pipelines/<typ>.yaml
+name: setup-<env>--<businessunit>--<repo>
+substitutions:
+  _BUSINESSUNIT: <businessunit>
+  _REPO: <repo>
+  _DESC: <desc>
+  _ENV: <env>
+  _REGION: <region>
+  _URL: https://<env>.<et>.<url>
+  _NAME: <env>--<businessunit>--<repo>
+  _IAP: '--iap=disabled'
+  _UPTIME_BUILDER: cloud-builders/null
+  envs:
+    prd:
+      _UPTIME_BUILDER: delete-this-key
+      _URL: https://<url>
+triggerTemplate:
+  projectId: sok-<cenv>-svc
+  repoName: bitbucket_wasoko_<repo>
+  tagName: ^setup-<env>---*
+approvalConfig:
+  approvalRequired: true
+  envs:
+    dev:
+      approvalRequired: false
+    qa:
+      approvalRequired: false
